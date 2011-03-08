@@ -150,6 +150,25 @@ module WillPaginate
         end
       end
 
+      # Same as pageinate_by_sql by uses Postgres window function to run the count and query in 1 query
+      # instead of 2.
+      #
+      def self.paginate_by_one_hit_sql(sql, options)
+        WillPaginate::Collection.create(*wp_parse_options(options)) do |pager|
+          query = sanitize_sql(sql.dup)
+
+          #add a CTE so we can perform the count in a window function
+          query = "WITH sql_query as(#{query})
+          select count(*) OVER () as total_entries, * from sql_query"
+          # add limit, offset
+          add_limit! query, :offset => pager.offset, :limit => pager.per_page
+          # perfom the find
+          pager.replace find_by_sql(query)
+          #populate total_entries
+          pager.total_entries = pager.any? ? pager.first.total_entries : 0
+        end
+      end
+
       def respond_to?(method, include_priv = false) #:nodoc:
         case method.to_sym
         when :paginate, :paginate_by_sql
